@@ -80,6 +80,8 @@ typedef struct {
 
 typedef struct Client {
 	char name[256];
+	XTextProperty sname;
+	XTextProperty uname;
 	Window win;
 	int tabx;
 	Bool urgent;
@@ -132,7 +134,8 @@ static void unmanage(int c);
 static void updatenumlockmask(void);
 static void updatetitle(int c);
 static int xerror(Display *dpy, XErrorEvent *ee);
-static void xsettitle(Window w, const char *str, const char *ustr);
+static void xsettitle(Window w, Client *client);
+//static void xsettitle(Window w, const char *str, const char *ustr);
 
 /* variables */
 static int screen;
@@ -441,7 +444,7 @@ focus(int c) {
 		for(i = 0, n = strlen(buf); cmd[i] && n < sizeof(buf); i++)
 			n += snprintf(&buf[n], sizeof(buf) - n, " %s", cmd[i]);
 
-		xsettitle(win, buf, NULL);
+		//xsettitle(win, buf, NULL);
 		XRaiseWindow(dpy, win);
 
 		return;
@@ -455,7 +458,7 @@ focus(int c) {
 	XSetInputFocus(dpy, clients[c]->win, RevertToParent, CurrentTime);
 	sendxembed(c, XEMBED_FOCUS_IN, XEMBED_FOCUS_CURRENT, 0, 0);
 	sendxembed(c, XEMBED_WINDOW_ACTIVATE, 0, 0, 0);
-	xsettitle(win, clients[c]->name, NULL);
+	xsettitle(win, clients[c]);
 
 	if(sel != c) {
 		lastsel = sel;
@@ -588,6 +591,21 @@ gettextprop(Window w, Atom atom, char *text, unsigned int size) {
 	}
 	text[size - 1] = '\0';
 	XFree(name.value);
+
+	return True;
+}
+
+Bool
+copytextprop(Window w, Atom atom, XTextProperty *xtp) {
+	if(xtp->value) {
+		XFree(xtp->value);
+	}
+
+	if(!XGetTextProperty(dpy, w, xtp, atom)) {
+		return False;
+		fprintf(stderr, "error getting a property");
+	}
+	fprintf(stderr, "got property %s", (char *)xtp->value);
 
 	return True;
 }
@@ -836,7 +854,8 @@ propertynotify(const XEvent *e) {
 			}
 		}
 		XFree(wmh);
-	} else if(ev->state != PropertyDelete && ev->atom == XA_WM_NAME
+	} else if(ev->state != PropertyDelete 
+			&& (ev->atom == XA_WM_NAME || ev->atom == wmatom[WMName])
 			&& (c = getclient(ev->window)) > -1) {
 		updatetitle(c);
 	}
@@ -1167,8 +1186,11 @@ updatetitle(int c) {
 		gettextprop(clients[c]->win, XA_WM_NAME,
 				clients[c]->name, sizeof(clients[c]->name));
 	}
+
+	copytextprop(clients[c]->win, XA_WM_NAME, &clients[c]->sname);
+	copytextprop(clients[c]->win, wmatom[WMName], &clients[c]->uname);
 	if(sel == c)
-		xsettitle(win, clients[c]->name, NULL);
+		xsettitle(win, clients[c]);
 	drawbar();
 }
 
@@ -1203,7 +1225,7 @@ xerror(Display *dpy, XErrorEvent *ee) {
 }
 
 void
-xsettitle(Window w, const char *str, const char *ustr) {
+xsettitle_old(Window w, const char *str, const char *ustr) {
         XTextProperty sxtp, uxtp; /* string and localized title */
         int r_sxtp, r_uxtp; /* result codes for property creatiion */
 
@@ -1214,15 +1236,23 @@ xsettitle(Window w, const char *str, const char *ustr) {
 
 	}
 
-        /* optionally set _NET_WM_NAME */
-        if(ustr) {
-            r_uxtp = XmbTextListToTextProperty(dpy, (char **)&ustr, 1, XTextStyle, &uxtp);
-            if (r_uxtp == Success) {
-		XSetTextProperty(dpy, w, &uxtp, wmatom[WMName]);
-		XFree(uxtp.value);
-            }
-        }
+	/* optionally set _NET_WM_NAME */
+	if(ustr) {
+		r_uxtp = XmbTextListToTextProperty(dpy, (char **)&ustr, 1, XTextStyle, &uxtp);
+		if (r_uxtp == Success) {
+			XSetTextProperty(dpy, w, &uxtp, wmatom[WMName]);
+			XFree(uxtp.value);
+		}
+	}
 
+}
+
+void
+xsettitle(Window w, Client *client) {
+	if(client->sname.value && client->uname.value) {
+		XSetTextProperty(dpy, w, &client->sname, XA_WM_NAME);
+		XSetTextProperty(dpy, w, &client->uname, wmatom[WMName]);
+	}
 }
 
 char *argv0;
