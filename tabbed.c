@@ -132,7 +132,7 @@ static void unmanage(int c);
 static void updatenumlockmask(void);
 static void updatetitle(int c);
 static int xerror(Display *dpy, XErrorEvent *ee);
-static void xsettitle(Window w, const char *str);
+static void xsettitle(Window w, const char *str, const char *ustr);
 
 /* variables */
 static int screen;
@@ -441,7 +441,7 @@ focus(int c) {
 		for(i = 0, n = strlen(buf); cmd[i] && n < sizeof(buf); i++)
 			n += snprintf(&buf[n], sizeof(buf) - n, " %s", cmd[i]);
 
-		xsettitle(win, buf);
+		xsettitle(win, buf, NULL);
 		XRaiseWindow(dpy, win);
 
 		return;
@@ -455,7 +455,7 @@ focus(int c) {
 	XSetInputFocus(dpy, clients[c]->win, RevertToParent, CurrentTime);
 	sendxembed(c, XEMBED_FOCUS_IN, XEMBED_FOCUS_CURRENT, 0, 0);
 	sendxembed(c, XEMBED_WINDOW_ACTIVATE, 0, 0, 0);
-	xsettitle(win, clients[c]->name);
+	xsettitle(win, clients[c]->name, NULL);
 
 	if(sel != c) {
 		lastsel = sel;
@@ -1168,7 +1168,7 @@ updatetitle(int c) {
 				clients[c]->name, sizeof(clients[c]->name));
 	}
 	if(sel == c)
-		xsettitle(win, clients[c]->name);
+		xsettitle(win, clients[c]->name, NULL);
 	drawbar();
 }
 
@@ -1203,15 +1203,26 @@ xerror(Display *dpy, XErrorEvent *ee) {
 }
 
 void
-xsettitle(Window w, const char *str) {
-	XTextProperty xtp;
+xsettitle(Window w, const char *str, const char *ustr) {
+        XTextProperty sxtp, uxtp; /* string and localized title */
+        int r_sxtp, r_uxtp; /* result codes for property creatiion */
 
-	if(XmbTextListToTextProperty(dpy, (char **)&str, 1, XCompoundTextStyle,
-				&xtp) == Success) {
-		XSetTextProperty(dpy, w, &xtp, wmatom[WMName]);
-		XSetTextProperty(dpy, w, &xtp, XA_WM_NAME);
-		XFree(xtp.value);
+        r_sxtp = XmbTextListToTextProperty(dpy, (char **)&str, 1, XStringStyle, &sxtp);
+	if(r_sxtp == Success) {
+		XSetTextProperty(dpy, w, &sxtp, XA_WM_NAME);
+		XFree(sxtp.value);
+
 	}
+
+        /* optionally set _NET_WM_NAME */
+        if(ustr) {
+            r_uxtp = XmbTextListToTextProperty(dpy, (char **)&ustr, 1, XTextStyle, &uxtp);
+            if (r_uxtp == Success) {
+		XSetTextProperty(dpy, w, &uxtp, wmatom[WMName]);
+		XFree(uxtp.value);
+            }
+        }
+
 }
 
 char *argv0;
